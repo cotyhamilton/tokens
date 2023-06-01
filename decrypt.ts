@@ -15,39 +15,15 @@ export async function decryptDataWithPassword(
   const passwordBuffer = encoder.encode(password);
 
   // Import the salt and IV
-  const importedSalt = new Uint8Array(salt);
-  const importedIV = new Uint8Array(iv);
+  const saltBuffer = new Uint8Array(salt);
+  const ivBuffer = new Uint8Array(iv);
 
   // Derive the key from the password using PBKDF2
-  const keyMaterial = await crypto.subtle.importKey(
-    "raw",
-    passwordBuffer,
-    "PBKDF2",
-    false,
-    ["deriveBits", "deriveKey"],
-  );
-  const key = await crypto.subtle.deriveKey(
-    {
-      name: "PBKDF2",
-      salt: importedSalt,
-      iterations: 100000,
-      hash: "SHA-256",
-    },
-    keyMaterial,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["decrypt"],
-  );
+  const keyMaterial = await _internals.importKey(passwordBuffer);
+  const key = await _internals.deriveKey(saltBuffer, keyMaterial);
 
   // Decrypt the data
-  const decryptedData = await crypto.subtle.decrypt(
-    {
-      name: "AES-GCM",
-      iv: importedIV,
-    },
-    key,
-    encryptedData,
-  );
+  const decryptedData = await _internals.decrypt(ivBuffer, key, encryptedData);
 
   // Return the decrypted data as a string
   return new TextDecoder().decode(decryptedData);
@@ -68,15 +44,51 @@ export async function decryptDataWithKey(
   const ivBuffer = new Uint8Array(iv);
 
   // Decrypt the data
-  const decryptedData = await crypto.subtle.decrypt(
-    {
-      name: "AES-GCM",
-      iv: ivBuffer,
-    },
-    key,
-    encryptedData,
-  );
+  const decryptedData = await _internals.decrypt(ivBuffer, key, encryptedData);
 
   // Return the decrypted data as a string
   return new TextDecoder().decode(decryptedData);
 }
+
+export const _internals = {
+  importKey: async (passwordBuffer: ArrayBuffer) => {
+    const keyMaterial = await crypto.subtle.importKey(
+      "raw",
+      passwordBuffer,
+      "PBKDF2",
+      false,
+      ["deriveBits", "deriveKey"],
+    );
+    return keyMaterial;
+  },
+  deriveKey: async (saltBuffer: ArrayBuffer, keyMaterial: CryptoKey) => {
+    const key = await crypto.subtle.deriveKey(
+      {
+        name: "PBKDF2",
+        salt: saltBuffer,
+        iterations: 100000,
+        hash: "SHA-256",
+      },
+      keyMaterial,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["decrypt"],
+    );
+    return key;
+  },
+  decrypt: async (
+    ivBuffer: ArrayBuffer,
+    key: CryptoKey,
+    encryptedData: ArrayBuffer,
+  ) => {
+    const decryptedData = await crypto.subtle.decrypt(
+      {
+        name: "AES-GCM",
+        iv: ivBuffer,
+      },
+      key,
+      encryptedData,
+    );
+    return decryptedData;
+  },
+};
